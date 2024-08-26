@@ -5,10 +5,13 @@ import com.example.bookrecord2.dto.ReviewDto;
 import com.example.bookrecord2.entity.Book;
 import com.example.bookrecord2.entity.Review;
 import com.example.bookrecord2.entity.User;
+import com.example.bookrecord2.exception.impl.UnauthorizedException;
 import com.example.bookrecord2.repository.BookRepository;
 import com.example.bookrecord2.repository.ReviewRepository;
 import com.example.bookrecord2.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.AllArgsConstructor;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,16 +30,17 @@ public class ReviewService {
 
     public void addReview(ReviewDto reviewDto, String userNickname) {
         User user = userRepository.findByNickname(userNickname)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
         Book book = bookRepository.findById(reviewDto.getBookId())
-                .orElseThrow(() -> new RuntimeException("책을 찾을 수 없습니다."));
+                .orElseThrow(() -> new EntityNotFoundException("책을 찾을 수 없습니다."));
 
-        Review review = new Review();
-        review.setTitle(reviewDto.getTitle());
-        review.setContent(reviewDto.getContent());
-        review.setUser(user);
-        review.setBook(book);
-        review.setCreatedAt(LocalDateTime.now());
+        Review review = Review.builder()
+                .title(reviewDto.getTitle())
+                .content(reviewDto.getContent())
+                .user(user)
+                .book(book)
+                .createdAt(LocalDateTime.now())
+                .build();
 
         reviewRepository.save(review);
     }
@@ -45,11 +49,12 @@ public class ReviewService {
         return reviewRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(review -> {
-                    ReviewDto dto = new ReviewDto();
-                    dto.setBookId(review.getBook().getId());
-                    dto.setTitle(review.getTitle());
-                    dto.setUserNickname(review.getUser().getNickname());
-                    dto.setCreatedAt(review.getCreatedAt());
+                    ReviewDto dto = ReviewDto.builder()
+                            .bookId(review.getBook().getId())
+                            .title(review.getTitle())
+                            .userNickname(review.getUser().getNickname())
+                            .createdAt(review.getCreatedAt())
+                            .build();
                     return dto;
                 })
                 .collect(Collectors.toList());
@@ -57,54 +62,47 @@ public class ReviewService {
 
     public ReviewDto getReviewWithComments(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("감상문을 찾을 수 없습니다."));
+                .orElseThrow(() -> new EntityNotFoundException("감상문을 찾을 수 없습니다."));
 
-        ReviewDto dto = new ReviewDto();
-        dto.setBookId(review.getBook().getId());
-        dto.setTitle(review.getTitle());
-        dto.setContent(review.getContent());
-        dto.setUserNickname(review.getUser().getNickname());
-        dto.setCreatedAt(review.getCreatedAt());
-        dto.setComments(review.getComments().stream()
-                .sorted((c1, c2) -> c2.getCreatedAt().compareTo(c1.getCreatedAt()))
-                .map(comment -> new CommentDto(
-                        comment.getContent(),
-                        comment.getCreatedAt(),
-                        comment.getUser().getNickname()
-                        ))
-                .collect(Collectors.toList()));
+        ReviewDto dto = ReviewDto.builder()
+                .bookId(review.getBook().getId())
+                .title(review.getTitle())
+                .content(review.getContent())
+                .userNickname(review.getUser().getNickname())
+                .createdAt(review.getCreatedAt())
+                .comments(review.getComments().stream()
+                        .sorted((c1, c2) -> c2.getCreatedAt().compareTo(c1.getCreatedAt()))
+                        .map(comment -> new CommentDto(
+                                comment.getContent(),
+                                comment.getCreatedAt(),
+                                comment.getUser().getNickname()
+                                ))
+                        .collect(Collectors.toList())).build();
         return dto;
     }
 
+    @Transactional
     public void updateReview(Long reviewId, ReviewDto reviewDto, String userNickname) {
-        System.out.println("reviewId: " + reviewId);
         if (reviewId == null) {
             throw new IllegalArgumentException("reviewId null");
         }
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("감상문을 찾을 수 없습니다."));
+                .orElseThrow(() -> new EntityNotFoundException("감상문을 찾을 수 없습니다."));
 
         if (!review.getUser().getNickname().equals(userNickname)) {
-            throw new RuntimeException("본인이 작성한 감상문만 수정할 수 있습니다.");
+            throw new UnauthorizedException();
         }
-
-//        System.out.println("BookId:" + reviewDto.getBookId());
-//        Book book = bookRepository.findById(reviewDto.getBookId())
-//                .orElseThrow(() -> new RuntimeException("책을 찾을 수 없습니다."));
 
         review.setTitle(reviewDto.getTitle());
         review.setContent(reviewDto.getContent());
-//        review.setBook(book);
-
-        reviewRepository.save(review);
     }
 
     public void deleteReview(Long reviewId, String userNickname) {
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("감상문을 찾을 수 없습니다."));
+                .orElseThrow(() -> new EntityNotFoundException("감상문을 찾을 수 없습니다."));
 
         if (!review.getUser().getNickname().equals(userNickname)) {
-            throw new RuntimeException("본인이 작성한 감상문만 삭제할 수 있습니다.");
+            throw new UnauthorizedException();
         }
 
         reviewRepository.delete(review);
