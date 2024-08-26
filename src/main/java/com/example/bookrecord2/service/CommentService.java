@@ -68,7 +68,6 @@ public class CommentService {
 
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new EntityNotFoundException("댓글을 찾을 수 없습니다."));
-
         if (!comment.getReview().getId().equals(review.getId())){
             throw new RuntimeException("해당 감상문에 등록된 댓글이 아닙니다.");
         }
